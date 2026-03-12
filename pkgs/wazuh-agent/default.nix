@@ -30,8 +30,8 @@
 }:
 
 let
-  version   = "4.14.1";
-  depsVer   = "47";
+  version   = "4.14.3";
+  depsVer   = "49";
   depsBase  = "https://packages.wazuh.com/deps/${depsVer}/libraries/sources";
 
   dep = name: sha256: fetchurl {
