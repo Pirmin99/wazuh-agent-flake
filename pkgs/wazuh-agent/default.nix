@@ -106,7 +106,7 @@ let
     owner          = "wazuh";
     repo           = "wazuh";
     rev            = "v${version}";
-    sha256         = "sha256-qAxsXwuFHlPCsPrKNiElqD77vrwtCZtR+7+G0158m+Y=";
+    sha256         = "sha256-mtQ8nXfliJSr7jyvAcD/cVbHw8t+1u6R15AYQoKkihY=";
     fetchSubmodules = true;
   };
 
