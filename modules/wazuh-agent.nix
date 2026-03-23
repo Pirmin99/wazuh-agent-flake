@@ -11,9 +11,7 @@
 # Service design:
 #   Type=oneshot + RemainAfterExit=yes — ExecStart launches all five daemons
 #   directly (they self-daemonize), then exits 0.  systemd considers the
-#   service active until ExecStop runs.  wazuh-control is intentionally
-#   bypassed: its pstatus polling loop is unreliable when daemons are started
-#   fresh (no pre-existing PID files) inside a systemd unit.
+#   service active until ExecStop runs.
 #
 # Socket ownership:
 #   wazuh-modulesd starts as root, creates control/upgrade/wmodules sockets,
@@ -218,7 +216,7 @@ in
 
     autoEnroll = lib.mkOption {
       type = lib.types.bool;
-      default = true;
+      default = false;
       description = "Auto-enroll with the manager via the enrollment protocol on first start.";
     };
 
