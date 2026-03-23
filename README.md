@@ -3,16 +3,21 @@
 NixOS flake that builds the Wazuh agent from source and provides a NixOS
 module with a contained runtime layout.
 
-AI helped to create this module and it's still work in progress.
+Many patches were needed to make the agent work. The flake should be reviewed at some point, but I do not have the time currently.
+Feel free to contribute.
 
-Add to flake inputs:
+AI helped to create this module.
+
+nix.settings.sandbox = "relaxed" is required.
+
+#### Add to flake inputs:
 
 wazuh-agent = {
     url = "github:Pirmin99/wazuh-agent-flake";
     inputs.nixpkgs.follows = "nixpkgs";
 };
 
-Add this to imports:
+#### Add this to imports:
 
 inputs.wazuh-agent.nixosModules.wazuh-agent
 
