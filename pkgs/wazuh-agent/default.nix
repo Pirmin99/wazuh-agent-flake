@@ -81,7 +81,7 @@ let
     cJSON = dep "cJSON" "sha256-2oCfcLfQOsUprmIj1DkL+ibNKfjDLI6LO2Me+hZniS0=";
     openssl = dep "openssl" "sha256-A4b+Ogv0i64spNF0KlPfmo/LG3NYO6Iuj4p936E3XNk=";
     zlib = dep "zlib" "sha256-tZ04FJ8MKexU0nZmEevFpRoDK/lxfjmprwD7bLhTK4s=";
-    curl = dep "curl" "sha256-MM9xQuQoJxjOsjfhe1y/da/NfJ84gKA5xe/qYtsJRwk=";
+    curl = dep "curl" "sha256-qTtbg5JV2SSHo/mtffraHcc6sBaALH9mncCaiRxlRvo=";
     bzip2 = dep "bzip2" "sha256-J2iO4DFqZLOeURssIkBwytl8OUpfcR+dBV/BgJ2JW80=";
     libpcre2 = dep "libpcre2" "sha256-WoDWVNfRSz25+jpJ179EpJhoO0Z4SojOxRSosZR2e5I=";
     libyaml = dep "libyaml" "sha256-NdqtYIs3LVzgmfc4wPIb/MA9aSDZL0SDhsWE5mTxN2o=";
@@ -101,7 +101,7 @@ let
     rpm = dep "rpm" "sha256-kNhy9U6rzzdzbZCsF6jTEwEtqE5oWxn9Lav0oBKVcpA=";
     rocksdb = dep "rocksdb" "sha256-7u1go9Tin3MF55+fXOvUJhF0JhIn8bWn0F2lVWVnVDY=";
     lzma = dep "lzma" "sha256-TODBktQQcrVnmvibtTHvtoXIJnpLfiAFmZFJrBcCgTQ=";
-    "cpp-httplib" = dep "cpp-httplib" "sha256-ZRdXMmNhFoa5IZunlsNfVKMG6yfcPHLhgH8qCjTKweg=";
+    "cpp-httplib" = dep "cpp-httplib" "sha256-GLroWhWQcef5tpB5lrV2fBJW6me4ip74bbdzgF0eRrU=";
     benchmark = dep "benchmark" "sha256-lMV6oMsr142+nnfTMsvGRNrw/s3JoJYyBIvm4J+c7Ws=";
     "libbpf-bootstrap" = dep "libbpf-bootstrap" "sha256-hh74B1ePDobIfuXC2YdHaFPmQGm/xLsTon4jPtNXSDI=";
     dbus = dep "dbus" "sha256-fGVKyaT2i1DzLWdJIsGP/nQdMoqX15RFdhj8OgekjTo=";
@@ -111,7 +111,7 @@ let
     owner = "wazuh";
     repo = "wazuh";
     rev = "v${version}";
-    sha256 = "sha256-mtQ8nXfliJSr7jyvAcD/cVbHw8t+1u6R15AYQoKkihY=";
+    sha256 = "sha256-bDePmy1P1rOD2Zz6NzaQU7fP6XUMSROQ3xOx8KAabYM=";
     fetchSubmodules = true;
   };
 
