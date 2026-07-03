@@ -1,0 +1,10 @@
+# Nix build outputs
+result
+result-*
+
+# direnv
+.direnv/
+
+# Claude Code local settings
+.claude/settings.local.json
+CLAUDE.md

@@ -31,8 +31,10 @@
 }:
 
 let
-  version = "4.14.5";
-  depsVer = "99-29585";
+  # Version and dependency hashes live in deps.json; regenerate it with
+  # scripts/update-deps.sh (or: nix run .#update) on a version bump.
+  pins = lib.importJSON ./deps.json;
+  inherit (pins) version depsVer;
   depsBase = "https://packages.wazuh.com/deps/${depsVer}/libraries/sources";
 
   dep =
@@ -45,6 +47,7 @@ let
   depNlohmann =
     sha256:
     fetchurl {
+      # nlohmann comes from a separate deps release: upstream caps it at 21.
       url = "https://packages.wazuh.com/deps/21/libraries/sources/nlohmann.tar.gz";
       inherit sha256;
     };
@@ -72,45 +75,19 @@ let
   vmlinuxSrc = fetchFromGitHub {
     owner = "libbpf";
     repo = "vmlinux.h";
-    rev = "main";
+    rev = "5c36ac2080a8d3c1216470ce97e6502ed50272e5";
     sha256 = "sha256-EKLJh3sSH/BGMZHUfivQ8J1QbtnybekghZ+LNvdj858=";
   };
 
-  externalDeps = {
-    "audit-userspace" = dep "audit-userspace" "sha256-6Coy5e35OwVRYOFLyX9B3q05KHklhR3ICnY44tTTBDQ=";
-    benchmark = dep "benchmark" "sha256-lMV6oMsr142+nnfTMsvGRNrw/s3JoJYyBIvm4J+c7Ws=";
-    bzip2 = dep "bzip2" "sha256-J2iO4DFqZLOeURssIkBwytl8OUpfcR+dBV/BgJ2JW80=";
-    cJSON = dep "cJSON" "sha256-2oCfcLfQOsUprmIj1DkL+ibNKfjDLI6LO2Me+hZniS0=";
-    "cpp-httplib" = dep "cpp-httplib" "sha256-GLroWhWQcef5tpB5lrV2fBJW6me4ip74bbdzgF0eRrU=";
-    curl = dep "curl" "sha256-qTtbg5JV2SSHo/mtffraHcc6sBaALH9mncCaiRxlRvo=";
-    dbus = dep "dbus" "sha256-fGVKyaT2i1DzLWdJIsGP/nQdMoqX15RFdhj8OgekjTo=";
-    googletest = dep "googletest" "sha256-jB6KCn8iHCEl6Z5qy3CdorpHJHa00FfFjeUEvr841Bc=";
-    libarchive = dep "libarchive" "sha256-VA/0pV3vp1d4osQFZ6gwZIzlNnuK6hIzZodNlrc074A=";
-    "libbpf-bootstrap" = dep "libbpf-bootstrap" "sha256-hh74B1ePDobIfuXC2YdHaFPmQGm/xLsTon4jPtNXSDI=";
-    libdb = dep "libdb" "sha256-fpxE6Mf9sYb/UhqNCFsb+mNNNC3Md37Oofv5qYq13F4=";
-    libffi = dep "libffi" "sha256-DpcfZLrMIglOifA0u6B1tA7MLCwpAO7NeuhYFf1sn2k=";
-    libpcre2 = dep "libpcre2" "sha256-WoDWVNfRSz25+jpJ179EpJhoO0Z4SojOxRSosZR2e5I=";
-    libplist = dep "libplist" "sha256-iCeNS9/BvWo6GlWk89kzaD0nMroJz3p0n+jsjuxAbjw=";
-    libyaml = dep "libyaml" "sha256-NdqtYIs3LVzgmfc4wPIb/MA9aSDZL0SDhsWE5mTxN2o=";
-    lua = dep "lua" "sha256-Iz6H6HEJC9MMS2kqxzvXFDYcFQURSOTu7IKKHfhDbso=";
-    lzma = dep "lzma" "sha256-TODBktQQcrVnmvibtTHvtoXIJnpLfiAFmZFJrBcCgTQ=";
-    msgpack = dep "msgpack" "sha256-BtY7zzKJbNCvVIDEARNLGtHBZv2E6+W0hueSEB7oVOI=";
-    nlohmann = depNlohmann "sha256-tcOpnp61Mx2VjivdOmKDxLnqetZ03UZp7ibVxe74Rf4=";
-    openssl = dep "openssl" "sha256-A4b+Ogv0i64spNF0KlPfmo/LG3NYO6Iuj4p936E3XNk=";
-    pacman = dep "pacman" "sha256-Yxq+Bl7JgttWv+wFzzfDOo9on9f0Fkw5J3KEvXoNDjE=";
-    popt = dep "popt" "sha256-1ogKBmIsoy3EqjmtXc977y+qgb2TGvvmS6Q0rY/uHao=";
-    procps = dep "procps" "sha256-Ih85XinRvb5LrMnbOWAu7guuaFqTVDe+DX/rQuMZLQc=";
-    rocksdb = dep "rocksdb" "sha256-7u1go9Tin3MF55+fXOvUJhF0JhIn8bWn0F2lVWVnVDY=";
-    rpm = dep "rpm" "sha256-kNhy9U6rzzdzbZCsF6jTEwEtqE5oWxn9Lav0oBKVcpA=";
-    sqlite = dep "sqlite" "sha256-qBv/MLtK/9GwakmD/4jvgntKuuoxkbOa/37bKNHd0AM=";
-    zlib = dep "zlib" "sha256-tZ04FJ8MKexU0nZmEevFpRoDK/lxfjmprwD7bLhTK4s=";
+  externalDeps = lib.mapAttrs dep pins.deps // {
+    nlohmann = depNlohmann pins.nlohmann;
   };
 
   src = fetchFromGitHub {
     owner = "wazuh";
     repo = "wazuh";
     rev = "v${version}";
-    sha256 = "sha256-YflBYPNfLRVUIVZH9BRgDLKiMFqQh3hB8Yk0DS6dlaU=";
+    sha256 = pins.srcHash;
     fetchSubmodules = true;
   };
 
@@ -118,8 +95,6 @@ in
 stdenv.mkDerivation rec {
   pname = "wazuh-agent";
   inherit version src;
-
-  __noChroot = true;
 
   hardeningDisable = [ "zerocallusedregs" ];
 
@@ -163,13 +138,19 @@ stdenv.mkDerivation rec {
       lib.mapAttrsToList (dirName: drv: ''
         echo "Extracting ${dirName}..."
         mkdir -p source/src/external/${dirName}
-        tar -xf ${drv} -C source/src/external/${dirName} --strip-components=${
-          if dirName == "sqlite" then "2" else "1"
-        }
+        # Layouts vary between deps releases: most tarballs are name/...,
+        # some ./name/... — strip the extra leading "." component when present.
+        # (sed reads the whole listing; head would EPIPE tar under pipefail)
+        firstEntry=$(tar -tf ${drv} | sed -n 1p)
+        case $firstEntry in
+          ./*) strip=2 ;;
+          *)   strip=1 ;;
+        esac
+        tar -xf ${drv} -C source/src/external/${dirName} --strip-components=$strip
       '') externalDeps
     )}
     substituteInPlace source/src/external/openssl/config \
-      --replace 'exec "$THERE/Configure"' 'exec "$(cd "$THERE" && pwd)/Configure"'
+      --replace-fail 'exec "$THERE/Configure"' 'exec "$(cd "$THERE" && pwd)/Configure"'
     patchShebangs source/src/external/openssl/Configure
     sed -i 's|cp $< $@|cp $< $@ \&\& chmod u+w $@|g' source/src/Makefile
     sed -i 's|cd $(EXTERNAL_AUDIT) && ./autogen.sh && ./configure|cd $(EXTERNAL_AUDIT) \&\& chmod -R u+w . \&\& rm -f INSTALL \&\& ./autogen.sh \&\& ./configure|' source/src/Makefile
@@ -179,7 +160,7 @@ stdenv.mkDerivation rec {
     mkdir -p source/src/external/libbpf-bootstrap/src
     cp ${modernBpfC} source/src/external/libbpf-bootstrap/src/modern.bpf.c
     substituteInPlace source/src/external/libbpf-bootstrap/CMakeLists.txt \
-      --replace \
+      --replace-fail \
       'file(DOWNLOAD ''${FILE_URL} ''${DEST_PATH})' \
       '# download skipped - file pre-placed by Nix'
     sed -i '/GIT_REPOSITORY https:\/\/github.com\/libbpf\/libbpf.git/d' source/src/external/libbpf-bootstrap/CMakeLists.txt
@@ -216,14 +197,12 @@ stdenv.mkDerivation rec {
       {} \;
     sed -i 's|os_calloc(PATH_MAX, sizeof(char), buff);|os_calloc(PATH_MAX, sizeof(char), buff); { char * home_env = getenv("WAZUH_HOME"); if (home_env) { snprintf(buff, PATH_MAX, "%s", home_env); return buff; } }|' \
       source/src/shared/file_op.c
+    # The whole runtime layout depends on this patch; fail loudly if a
+    # version bump changes file_op.c and the sed above stops matching.
+    grep -q 'getenv("WAZUH_HOME")' source/src/shared/file_op.c \
+      || { echo "ERROR: WAZUH_HOME patch did not apply to src/shared/file_op.c"; exit 1; }
     chmod -R u+w source/src/external/
   '';
-
-  makeFlags = [
-    "TARGET=agent"
-    "PREFIX=/var/lib/wazuh-agent"
-    "INSTALLDIR=${placeholder "out"}/opt/wazuh-agent"
-  ];
 
   buildPhase = ''
     runHook preBuild
@@ -239,10 +218,10 @@ stdenv.mkDerivation rec {
     cp "$BPFTOOL_OUT/bootstrap/bpftool" "$BPFTOOL_OUT/bpftool"
     cd ../../../..
 
-    # Generate vmlinux.h from the running kernel — requires __noChroot = true
-    mkdir -p external/libbpf-bootstrap/vmlinux.h/include/x86
-    "$BPFTOOL_OUT/bpftool" btf dump file /sys/kernel/btf/vmlinux format c > \
-      external/libbpf-bootstrap/vmlinux.h/include/x86/vmlinux.h
+    # vmlinux.h comes from the pinned libbpf/vmlinux.h checkout copied in
+    # postUnpack (CO-RE, kernel-independent) — no host BTF dump needed.
+    test -e external/libbpf-bootstrap/vmlinux.h/include/x86/vmlinux.h \
+      || { echo "ERROR: pinned vmlinux.h not found at include/x86/vmlinux.h"; exit 1; }
 
     # Pre-build libdb so db.h exists when data_provider CMake configures
     mkdir -p external/libdb/build_unix
@@ -280,6 +259,8 @@ stdenv.mkDerivation rec {
       $INST/ruleset/sca \
       $INST/active-response/bin
 
+    # These are essential; a missing one means the build silently produced a
+    # broken agent, so install unconditionally and let a failure abort.
     for bin in \
         wazuh-agentd \
         wazuh-logcollector \
@@ -287,23 +268,33 @@ stdenv.mkDerivation rec {
         wazuh-execd \
         agent-auth \
         manage_agents; do
-      [ -f src/$bin ] && install -m 0750 src/$bin $INST/bin/$bin
+      install -m 0750 src/$bin $INST/bin/$bin
     done
 
-    [ -f src/syscheckd/build/bin/wazuh-syscheckd ] && \
-      install -m 0750 src/syscheckd/build/bin/wazuh-syscheckd $INST/bin/wazuh-syscheckd
+    install -m 0750 src/syscheckd/build/bin/wazuh-syscheckd $INST/bin/wazuh-syscheckd
     find src -maxdepth 2 -name "*.so*" -exec cp -P {} $INST/lib/ \; || true
     find src/shared_modules -name "*.so*" -exec cp -P {} $INST/lib/ \; || true
     find src/syscheckd -name "*.so*" -exec cp -P {} $INST/lib/ \; || true
     find src/wazuh_modules -name "*.so*" -exec cp -P {} $INST/lib/ \; || true
     find src/data_provider -name "*.so*" -exec cp -P {} $INST/lib/ \; || true
 
+    # Replace the rpath wholesale: the build-tree entries it contains are
+    # dangling (and rejected by the /build/ reference check), but keep the
+    # buildInputs store paths resolvable alongside the bundled libs.
+    RPATH="$INST/lib:${
+      lib.makeLibraryPath [
+        openssl
+        zlib
+        attr
+        stdenv.cc.cc.lib
+      ]
+    }"
     for f in $INST/lib/*.so $INST/lib/*.so.*; do
-      patchelf --set-rpath "$INST/lib" $f 2>/dev/null || true
+      patchelf --set-rpath "$RPATH" $f 2>/dev/null || true
     done
 
     for f in $INST/bin/*; do
-      patchelf --set-rpath "$INST/lib" $f 2>/dev/null || true
+      patchelf --set-rpath "$RPATH" $f 2>/dev/null || true
     done
 
     install -m 0750 src/init/wazuh-client.sh $INST/bin/wazuh-control
@@ -315,6 +306,8 @@ stdenv.mkDerivation rec {
       -e 's|''${DIR}/bin/|''${BINDIR}/|g' \
       -e 's|\.\./|''${DIR}/|g' \
       $INST/bin/wazuh-control
+    grep -q 'WAZUH_HOME' $INST/bin/wazuh-control \
+      || { echo "ERROR: wazuh-control rewrite did not apply"; exit 1; }
 
     install -m 0640 etc/internal_options.conf $INST/etc/internal_options.conf
 
@@ -345,6 +338,7 @@ stdenv.mkDerivation rec {
     description = "Wazuh open-source security agent (XDR/SIEM endpoint component)";
     homepage = "https://wazuh.com";
     license = licenses.gpl2Only;
+    mainProgram = "wazuh-control";
     platforms = [ "x86_64-linux" ];
     maintainers = [ ];
   };
