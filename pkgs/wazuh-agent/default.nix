@@ -69,10 +69,13 @@ let
     sha256 = "sha256-+L/rbp0a3p4PHq1yTJmuMcNj0gT5sqAPeaNRo3Sh6U8=";
   };
 
+  # Pinned commit of main; provides the CO-RE vmlinux.h used for the eBPF
+  # build (include/x86/vmlinux.h), so no BTF dump from the host kernel and
+  # therefore no sandbox escape is needed.
   vmlinuxSrc = fetchFromGitHub {
     owner = "libbpf";
     repo = "vmlinux.h";
-    rev = "main";
+    rev = "5c36ac2080a8d3c1216470ce97e6502ed50272e5";
     sha256 = "sha256-EKLJh3sSH/BGMZHUfivQ8J1QbtnybekghZ+LNvdj858=";
   };
 
@@ -118,8 +121,6 @@ in
 stdenv.mkDerivation rec {
   pname = "wazuh-agent";
   inherit version src;
-
-  __noChroot = true;
 
   hardeningDisable = [ "zerocallusedregs" ];
 
@@ -169,7 +170,7 @@ stdenv.mkDerivation rec {
       '') externalDeps
     )}
     substituteInPlace source/src/external/openssl/config \
-      --replace 'exec "$THERE/Configure"' 'exec "$(cd "$THERE" && pwd)/Configure"'
+      --replace-fail 'exec "$THERE/Configure"' 'exec "$(cd "$THERE" && pwd)/Configure"'
     patchShebangs source/src/external/openssl/Configure
     sed -i 's|cp $< $@|cp $< $@ \&\& chmod u+w $@|g' source/src/Makefile
     sed -i 's|cd $(EXTERNAL_AUDIT) && ./autogen.sh && ./configure|cd $(EXTERNAL_AUDIT) \&\& chmod -R u+w . \&\& rm -f INSTALL \&\& ./autogen.sh \&\& ./configure|' source/src/Makefile
@@ -179,7 +180,7 @@ stdenv.mkDerivation rec {
     mkdir -p source/src/external/libbpf-bootstrap/src
     cp ${modernBpfC} source/src/external/libbpf-bootstrap/src/modern.bpf.c
     substituteInPlace source/src/external/libbpf-bootstrap/CMakeLists.txt \
-      --replace \
+      --replace-fail \
       'file(DOWNLOAD ''${FILE_URL} ''${DEST_PATH})' \
       '# download skipped - file pre-placed by Nix'
     sed -i '/GIT_REPOSITORY https:\/\/github.com\/libbpf\/libbpf.git/d' source/src/external/libbpf-bootstrap/CMakeLists.txt
@@ -216,14 +217,12 @@ stdenv.mkDerivation rec {
       {} \;
     sed -i 's|os_calloc(PATH_MAX, sizeof(char), buff);|os_calloc(PATH_MAX, sizeof(char), buff); { char * home_env = getenv("WAZUH_HOME"); if (home_env) { snprintf(buff, PATH_MAX, "%s", home_env); return buff; } }|' \
       source/src/shared/file_op.c
+    # The whole runtime layout depends on this patch; fail loudly if a
+    # version bump changes file_op.c and the sed above stops matching.
+    grep -q 'getenv("WAZUH_HOME")' source/src/shared/file_op.c \
+      || { echo "ERROR: WAZUH_HOME patch did not apply to src/shared/file_op.c"; exit 1; }
     chmod -R u+w source/src/external/
   '';
-
-  makeFlags = [
-    "TARGET=agent"
-    "PREFIX=/var/lib/wazuh-agent"
-    "INSTALLDIR=${placeholder "out"}/opt/wazuh-agent"
-  ];
 
   buildPhase = ''
     runHook preBuild
@@ -239,10 +238,10 @@ stdenv.mkDerivation rec {
     cp "$BPFTOOL_OUT/bootstrap/bpftool" "$BPFTOOL_OUT/bpftool"
     cd ../../../..
 
-    # Generate vmlinux.h from the running kernel — requires __noChroot = true
-    mkdir -p external/libbpf-bootstrap/vmlinux.h/include/x86
-    "$BPFTOOL_OUT/bpftool" btf dump file /sys/kernel/btf/vmlinux format c > \
-      external/libbpf-bootstrap/vmlinux.h/include/x86/vmlinux.h
+    # vmlinux.h comes from the pinned libbpf/vmlinux.h checkout copied in
+    # postUnpack (CO-RE, kernel-independent) — no host BTF dump needed.
+    test -e external/libbpf-bootstrap/vmlinux.h/include/x86/vmlinux.h \
+      || { echo "ERROR: pinned vmlinux.h not found at include/x86/vmlinux.h"; exit 1; }
 
     # Pre-build libdb so db.h exists when data_provider CMake configures
     mkdir -p external/libdb/build_unix
@@ -280,6 +279,8 @@ stdenv.mkDerivation rec {
       $INST/ruleset/sca \
       $INST/active-response/bin
 
+    # These are essential; a missing one means the build silently produced a
+    # broken agent, so install unconditionally and let a failure abort.
     for bin in \
         wazuh-agentd \
         wazuh-logcollector \
@@ -287,23 +288,33 @@ stdenv.mkDerivation rec {
         wazuh-execd \
         agent-auth \
         manage_agents; do
-      [ -f src/$bin ] && install -m 0750 src/$bin $INST/bin/$bin
+      install -m 0750 src/$bin $INST/bin/$bin
     done
 
-    [ -f src/syscheckd/build/bin/wazuh-syscheckd ] && \
-      install -m 0750 src/syscheckd/build/bin/wazuh-syscheckd $INST/bin/wazuh-syscheckd
+    install -m 0750 src/syscheckd/build/bin/wazuh-syscheckd $INST/bin/wazuh-syscheckd
     find src -maxdepth 2 -name "*.so*" -exec cp -P {} $INST/lib/ \; || true
     find src/shared_modules -name "*.so*" -exec cp -P {} $INST/lib/ \; || true
     find src/syscheckd -name "*.so*" -exec cp -P {} $INST/lib/ \; || true
     find src/wazuh_modules -name "*.so*" -exec cp -P {} $INST/lib/ \; || true
     find src/data_provider -name "*.so*" -exec cp -P {} $INST/lib/ \; || true
 
+    # Replace the rpath wholesale: the build-tree entries it contains are
+    # dangling (and rejected by the /build/ reference check), but keep the
+    # buildInputs store paths resolvable alongside the bundled libs.
+    RPATH="$INST/lib:${
+      lib.makeLibraryPath [
+        openssl
+        zlib
+        attr
+        stdenv.cc.cc.lib
+      ]
+    }"
     for f in $INST/lib/*.so $INST/lib/*.so.*; do
-      patchelf --set-rpath "$INST/lib" $f 2>/dev/null || true
+      patchelf --set-rpath "$RPATH" $f 2>/dev/null || true
     done
 
     for f in $INST/bin/*; do
-      patchelf --set-rpath "$INST/lib" $f 2>/dev/null || true
+      patchelf --set-rpath "$RPATH" $f 2>/dev/null || true
     done
 
     install -m 0750 src/init/wazuh-client.sh $INST/bin/wazuh-control
@@ -315,6 +326,8 @@ stdenv.mkDerivation rec {
       -e 's|''${DIR}/bin/|''${BINDIR}/|g' \
       -e 's|\.\./|''${DIR}/|g' \
       $INST/bin/wazuh-control
+    grep -q 'WAZUH_HOME' $INST/bin/wazuh-control \
+      || { echo "ERROR: wazuh-control rewrite did not apply"; exit 1; }
 
     install -m 0640 etc/internal_options.conf $INST/etc/internal_options.conf
 
@@ -345,6 +358,7 @@ stdenv.mkDerivation rec {
     description = "Wazuh open-source security agent (XDR/SIEM endpoint component)";
     homepage = "https://wazuh.com";
     license = licenses.gpl2Only;
+    mainProgram = "wazuh-control";
     platforms = [ "x86_64-linux" ];
     maintainers = [ ];
   };
