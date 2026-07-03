@@ -71,3 +71,4 @@ Manual alternative:
     nix flake check           # eval checks incl. a module smoke test
     nix fmt                   # format
     nix develop               # shell with nixfmt, statix, deadnix
+    nix run .#update -- 4.x.y # prefetch all hashes for a version bump (writes pkgs/wazuh-agent/deps.json)

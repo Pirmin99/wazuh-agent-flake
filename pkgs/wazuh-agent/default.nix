@@ -31,8 +31,10 @@
 }:
 
 let
-  version = "4.14.5";
-  depsVer = "99-29585";
+  # Version and dependency hashes live in deps.json; regenerate it with
+  # scripts/update-deps.sh (or: nix run .#update) on a version bump.
+  pins = lib.importJSON ./deps.json;
+  inherit (pins) version depsVer;
   depsBase = "https://packages.wazuh.com/deps/${depsVer}/libraries/sources";
 
   dep =
@@ -45,6 +47,7 @@ let
   depNlohmann =
     sha256:
     fetchurl {
+      # nlohmann comes from a separate deps release: upstream caps it at 21.
       url = "https://packages.wazuh.com/deps/21/libraries/sources/nlohmann.tar.gz";
       inherit sha256;
     };
@@ -69,9 +72,6 @@ let
     sha256 = "sha256-+L/rbp0a3p4PHq1yTJmuMcNj0gT5sqAPeaNRo3Sh6U8=";
   };
 
-  # Pinned commit of main; provides the CO-RE vmlinux.h used for the eBPF
-  # build (include/x86/vmlinux.h), so no BTF dump from the host kernel and
-  # therefore no sandbox escape is needed.
   vmlinuxSrc = fetchFromGitHub {
     owner = "libbpf";
     repo = "vmlinux.h";
@@ -79,41 +79,15 @@ let
     sha256 = "sha256-EKLJh3sSH/BGMZHUfivQ8J1QbtnybekghZ+LNvdj858=";
   };
 
-  externalDeps = {
-    "audit-userspace" = dep "audit-userspace" "sha256-6Coy5e35OwVRYOFLyX9B3q05KHklhR3ICnY44tTTBDQ=";
-    benchmark = dep "benchmark" "sha256-lMV6oMsr142+nnfTMsvGRNrw/s3JoJYyBIvm4J+c7Ws=";
-    bzip2 = dep "bzip2" "sha256-J2iO4DFqZLOeURssIkBwytl8OUpfcR+dBV/BgJ2JW80=";
-    cJSON = dep "cJSON" "sha256-2oCfcLfQOsUprmIj1DkL+ibNKfjDLI6LO2Me+hZniS0=";
-    "cpp-httplib" = dep "cpp-httplib" "sha256-GLroWhWQcef5tpB5lrV2fBJW6me4ip74bbdzgF0eRrU=";
-    curl = dep "curl" "sha256-qTtbg5JV2SSHo/mtffraHcc6sBaALH9mncCaiRxlRvo=";
-    dbus = dep "dbus" "sha256-fGVKyaT2i1DzLWdJIsGP/nQdMoqX15RFdhj8OgekjTo=";
-    googletest = dep "googletest" "sha256-jB6KCn8iHCEl6Z5qy3CdorpHJHa00FfFjeUEvr841Bc=";
-    libarchive = dep "libarchive" "sha256-VA/0pV3vp1d4osQFZ6gwZIzlNnuK6hIzZodNlrc074A=";
-    "libbpf-bootstrap" = dep "libbpf-bootstrap" "sha256-hh74B1ePDobIfuXC2YdHaFPmQGm/xLsTon4jPtNXSDI=";
-    libdb = dep "libdb" "sha256-fpxE6Mf9sYb/UhqNCFsb+mNNNC3Md37Oofv5qYq13F4=";
-    libffi = dep "libffi" "sha256-DpcfZLrMIglOifA0u6B1tA7MLCwpAO7NeuhYFf1sn2k=";
-    libpcre2 = dep "libpcre2" "sha256-WoDWVNfRSz25+jpJ179EpJhoO0Z4SojOxRSosZR2e5I=";
-    libplist = dep "libplist" "sha256-iCeNS9/BvWo6GlWk89kzaD0nMroJz3p0n+jsjuxAbjw=";
-    libyaml = dep "libyaml" "sha256-NdqtYIs3LVzgmfc4wPIb/MA9aSDZL0SDhsWE5mTxN2o=";
-    lua = dep "lua" "sha256-Iz6H6HEJC9MMS2kqxzvXFDYcFQURSOTu7IKKHfhDbso=";
-    lzma = dep "lzma" "sha256-TODBktQQcrVnmvibtTHvtoXIJnpLfiAFmZFJrBcCgTQ=";
-    msgpack = dep "msgpack" "sha256-BtY7zzKJbNCvVIDEARNLGtHBZv2E6+W0hueSEB7oVOI=";
-    nlohmann = depNlohmann "sha256-tcOpnp61Mx2VjivdOmKDxLnqetZ03UZp7ibVxe74Rf4=";
-    openssl = dep "openssl" "sha256-A4b+Ogv0i64spNF0KlPfmo/LG3NYO6Iuj4p936E3XNk=";
-    pacman = dep "pacman" "sha256-Yxq+Bl7JgttWv+wFzzfDOo9on9f0Fkw5J3KEvXoNDjE=";
-    popt = dep "popt" "sha256-1ogKBmIsoy3EqjmtXc977y+qgb2TGvvmS6Q0rY/uHao=";
-    procps = dep "procps" "sha256-Ih85XinRvb5LrMnbOWAu7guuaFqTVDe+DX/rQuMZLQc=";
-    rocksdb = dep "rocksdb" "sha256-7u1go9Tin3MF55+fXOvUJhF0JhIn8bWn0F2lVWVnVDY=";
-    rpm = dep "rpm" "sha256-kNhy9U6rzzdzbZCsF6jTEwEtqE5oWxn9Lav0oBKVcpA=";
-    sqlite = dep "sqlite" "sha256-qBv/MLtK/9GwakmD/4jvgntKuuoxkbOa/37bKNHd0AM=";
-    zlib = dep "zlib" "sha256-tZ04FJ8MKexU0nZmEevFpRoDK/lxfjmprwD7bLhTK4s=";
+  externalDeps = lib.mapAttrs dep pins.deps // {
+    nlohmann = depNlohmann pins.nlohmann;
   };
 
   src = fetchFromGitHub {
     owner = "wazuh";
     repo = "wazuh";
     rev = "v${version}";
-    sha256 = "sha256-YflBYPNfLRVUIVZH9BRgDLKiMFqQh3hB8Yk0DS6dlaU=";
+    sha256 = pins.srcHash;
     fetchSubmodules = true;
   };
 
@@ -164,9 +138,15 @@ stdenv.mkDerivation rec {
       lib.mapAttrsToList (dirName: drv: ''
         echo "Extracting ${dirName}..."
         mkdir -p source/src/external/${dirName}
-        tar -xf ${drv} -C source/src/external/${dirName} --strip-components=${
-          if dirName == "sqlite" then "2" else "1"
-        }
+        # Layouts vary between deps releases: most tarballs are name/...,
+        # some ./name/... — strip the extra leading "." component when present.
+        # (sed reads the whole listing; head would EPIPE tar under pipefail)
+        firstEntry=$(tar -tf ${drv} | sed -n 1p)
+        case $firstEntry in
+          ./*) strip=2 ;;
+          *)   strip=1 ;;
+        esac
+        tar -xf ${drv} -C source/src/external/${dirName} --strip-components=$strip
       '') externalDeps
     )}
     substituteInPlace source/src/external/openssl/config \

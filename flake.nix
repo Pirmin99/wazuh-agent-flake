@@ -30,14 +30,35 @@
 
       nixosModules.default = self.nixosModules.wazuh-agent;
 
-      formatter.${system} = pkgs.nixfmt;
+      formatter.${system} = pkgs.nixfmt-tree;
 
       devShells.${system}.default = pkgs.mkShell {
         packages = with pkgs; [
           nixfmt
           statix
           deadnix
+          jq
+          nix-prefetch-github
         ];
+      };
+
+      # Regenerate pkgs/wazuh-agent/deps.json for a version bump:
+      #   nix run .#update -- 4.15.0
+      apps.${system}.update = {
+        type = "app";
+        program = nixpkgs.lib.getExe (
+          pkgs.writeShellApplication {
+            name = "update-deps";
+            runtimeInputs = with pkgs; [
+              git
+              curl
+              jq
+              nix
+              nix-prefetch-github
+            ];
+            text = builtins.readFile ./scripts/update-deps.sh;
+          }
+        );
       };
 
       # Eval-only smoke test of the NixOS module — renders the systemd units
