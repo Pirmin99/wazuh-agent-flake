@@ -96,6 +96,10 @@ stdenv.mkDerivation rec {
   pname = "wazuh-agent";
   inherit version src;
 
+  # Newer GCC/glibc: strstr()/strchr() now preserve const, and the bundled
+  # libbpf (bpftool bootstrap) is built with -Werror.
+  env.NIX_CFLAGS_COMPILE = "-Wno-error=discarded-qualifiers";
+
   hardeningDisable = [ "zerocallusedregs" ];
 
   dontConfigure = true;
