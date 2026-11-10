@@ -44,32 +44,26 @@ let
       inherit sha256;
     };
 
-  depNlohmann =
-    sha256:
-    fetchurl {
-      # nlohmann comes from a separate deps release: upstream caps it at 21.
-      url = "https://packages.wazuh.com/deps/21/libraries/sources/nlohmann.tar.gz";
-      inherit sha256;
-    };
-
-  modernBpfC = fetchurl {
-    url = "https://raw.githubusercontent.com/wazuh/wazuh/v4.12.0/src/syscheckd/src/ebpf/src/modern.bpf.c";
-    sha256 = "sha256-mnPGgEoBZgXT6KxNCHEYt8eZHqrWIJjajxwiifpff+A=";
-  };
+  # These must match the GIT_TAGs that libbpf-bootstrap's CMakeLists asks for;
+  # we pre-place the checkouts instead of letting it clone, so nothing in the
+  # build would otherwise notice a mismatch. postUnpack asserts both tags are
+  # still the ones below, so a deps release that moves them fails the build.
+  bpftoolRev = "v7.7.0";
+  libbpfRev = "v1.7.0";
 
   bpftoolSrc = fetchFromGitHub {
     owner = "libbpf";
     repo = "bpftool";
-    rev = "v7.5.0";
-    sha256 = "sha256-XUh53pZ4NS56aMZMxYFVxrS+yScH0M7NiRGwjw8P3NE=";
+    rev = bpftoolRev;
+    sha256 = "sha256-U49a1L0MGzP45ZGpsIBMavnn26FArp5hN+EpmnDJEiE=";
     fetchSubmodules = true;
   };
 
   libbpfSrc = fetchFromGitHub {
     owner = "libbpf";
     repo = "libbpf";
-    rev = "v1.5.0";
-    sha256 = "sha256-+L/rbp0a3p4PHq1yTJmuMcNj0gT5sqAPeaNRo3Sh6U8=";
+    rev = libbpfRev;
+    sha256 = "sha256-F92msxkYp4yZA3qUoSwS5GKUhcEO6DrYNln7w6U+jt0=";
   };
 
   vmlinuxSrc = fetchFromGitHub {
@@ -79,9 +73,7 @@ let
     sha256 = "sha256-EKLJh3sSH/BGMZHUfivQ8J1QbtnybekghZ+LNvdj858=";
   };
 
-  externalDeps = lib.mapAttrs dep pins.deps // {
-    nlohmann = depNlohmann pins.nlohmann;
-  };
+  externalDeps = lib.mapAttrs dep pins.deps;
 
   src = fetchFromGitHub {
     owner = "wazuh";
@@ -134,6 +126,9 @@ stdenv.mkDerivation rec {
     zlib
     attr
     stdenv.cc.cc.lib
+    # Runtime dep of the libbpf.so we ship: it needs libelf.so.1 resolvable
+    # from the installed rpath, not just at build time.
+    elfutils
   ];
 
   postUnpack = ''
@@ -156,23 +151,47 @@ stdenv.mkDerivation rec {
     substituteInPlace source/src/external/openssl/config \
       --replace-fail 'exec "$THERE/Configure"' 'exec "$(cd "$THERE" && pwd)/Configure"'
     patchShebangs source/src/external/openssl/Configure
-    sed -i 's|cp $< $@|cp $< $@ \&\& chmod u+w $@|g' source/src/Makefile
+    # Copies from the read-only store land read-only, so the strip/elfedit steps
+    # that follow need write permission. Anchor at end-of-line and carry the
+    # optional ".tmp" suffix along: 4.14.10 changed the libstdc++ rule to
+    # "cp $< $@.tmp ... mv $@.tmp $@", and an unanchored match rewrote it into
+    # "cp $< $@ && chmod u+w $@.tmp" (copying to the wrong name, then chmod'ing
+    # a file that does not exist).
+    sed -i 's|cp $< $@\(\.tmp\)\?$|cp $< $@\1 \&\& chmod u+w $@\1|' source/src/Makefile
+    grep -qF 'cp $< $@.tmp && chmod u+w $@.tmp' source/src/Makefile \
+      || { echo "ERROR: chmod patch did not apply to the libstdc++ rule in src/Makefile"; exit 1; }
     sed -i 's|cd $(EXTERNAL_AUDIT) && ./autogen.sh && ./configure|cd $(EXTERNAL_AUDIT) \&\& chmod -R u+w . \&\& rm -f INSTALL \&\& ./autogen.sh \&\& ./configure|' source/src/Makefile
     sed -i 's|cp INSTALL.tmp INSTALL|chmod u+w INSTALL 2>/dev/null; cp INSTALL.tmp INSTALL|g' \
       source/src/external/audit-userspace/autogen.sh
     mkdir -p source/src/external/libdb/build_unix
     mkdir -p source/src/external/libbpf-bootstrap/src
-    cp ${modernBpfC} source/src/external/libbpf-bootstrap/src/modern.bpf.c
+    # libbpf-bootstrap's CMakeLists downloads modern.bpf.c from a hardcoded
+    # WAZUH_BRANCH (v4.12.0 in deps 55) that nothing in the tree overrides, but
+    # that copy is stale: the in-tree one grew euid/login_uid, which the
+    # userspace mirror struct in src/syscheckd/src/ebpf/include/bpf_helpers.h
+    # expects. Taking the branch's copy would compile fine and then hand
+    # userspace a struct with every field past gid at the wrong offset.
+    test -e source/src/syscheckd/src/ebpf/src/modern.bpf.c \
+      || { echo "ERROR: in-tree modern.bpf.c not found under src/syscheckd/src/ebpf/src"; exit 1; }
+    grep -q 'login_uid' source/src/syscheckd/src/ebpf/include/bpf_helpers.h \
+      || echo "WARNING: bpf_helpers.h no longer mentions login_uid - recheck the file_event layout"
+    cp source/src/syscheckd/src/ebpf/src/modern.bpf.c \
+      source/src/external/libbpf-bootstrap/src/modern.bpf.c
     substituteInPlace source/src/external/libbpf-bootstrap/CMakeLists.txt \
       --replace-fail \
       'file(DOWNLOAD ''${FILE_URL} ''${DEST_PATH})' \
       '# download skipped - file pre-placed by Nix'
-    sed -i '/GIT_REPOSITORY https:\/\/github.com\/libbpf\/libbpf.git/d' source/src/external/libbpf-bootstrap/CMakeLists.txt
-    sed -i '/GIT_TAG v1.5.0/d' source/src/external/libbpf-bootstrap/CMakeLists.txt
-    sed -i '/GIT_REPOSITORY https:\/\/github.com\/libbpf\/bpftool.git/d' source/src/external/libbpf-bootstrap/CMakeLists.txt
-    sed -i '/GIT_TAG v7.5.0/d' source/src/external/libbpf-bootstrap/CMakeLists.txt
-    sed -i '/GIT_REPOSITORY https:\/\/github.com\/libbpf\/vmlinux.h.git/d' source/src/external/libbpf-bootstrap/CMakeLists.txt
-    sed -i '/GIT_TAG main/d' source/src/external/libbpf-bootstrap/CMakeLists.txt
+    # Pin check before the clone directives are stripped: once GIT_TAG is gone
+    # there is nothing left to compare libbpfSrc/bpftoolSrc against.
+    grep -qF 'GIT_TAG ${libbpfRev}' source/src/external/libbpf-bootstrap/CMakeLists.txt \
+      || { echo "ERROR: libbpf-bootstrap no longer asks for libbpf ${libbpfRev}; update libbpfRev/libbpfSrc"; exit 1; }
+    grep -qF 'GIT_TAG ${bpftoolRev}' source/src/external/libbpf-bootstrap/CMakeLists.txt \
+      || { echo "ERROR: libbpf-bootstrap no longer asks for bpftool ${bpftoolRev}; update bpftoolRev/bpftoolSrc"; exit 1; }
+    # Drop every clone directive (libbpf, bpftool, vmlinux.h): the sources are
+    # pre-placed below and the sandbox has no network.
+    sed -i '/^  GIT_REPOSITORY /d; /^  GIT_TAG /d' source/src/external/libbpf-bootstrap/CMakeLists.txt
+    ! grep -q 'GIT_REPOSITORY\|GIT_TAG' source/src/external/libbpf-bootstrap/CMakeLists.txt \
+      || { echo "ERROR: clone directives remain in libbpf-bootstrap/CMakeLists.txt"; exit 1; }
     sed -i 's/-fzero-call-used-regs=used-gpr//g' source/src/external/libbpf-bootstrap/CMakeLists.txt
     sed -i '/^add_library(modern SHARED src\/modern.bpf.c)/d' \
       source/src/external/libbpf-bootstrap/CMakeLists.txt
@@ -180,6 +199,16 @@ stdenv.mkDerivation rec {
       source/src/external/libbpf-bootstrap/CMakeLists.txt
     sed -i '/^target_link_libraries(modern modern_skel)/d' \
       source/src/external/libbpf-bootstrap/CMakeLists.txt
+    # Deleting add_library(modern ...) leaves change_libbpf_include as the only
+    # consumer of the modern.bpf.o custom command, so CMake emits that rule into
+    # change_libbpf_include.dir — a target with no dependency on libbpf-build.
+    # Under -j that races clang against libbpf's install_uapi_headers and fails
+    # with "'bpf/bpf_helpers.h' file not found". Add the missing edge.
+    grep -q '^add_custom_target(change_libbpf_include' \
+      source/src/external/libbpf-bootstrap/CMakeLists.txt \
+      || { echo "ERROR: change_libbpf_include target not found in libbpf-bootstrap/CMakeLists.txt"; exit 1; }
+    echo 'add_dependencies(change_libbpf_include libbpf-build bpftool-build vmlinux.h)' \
+      >> source/src/external/libbpf-bootstrap/CMakeLists.txt
     cp -rv ${libbpfSrc}/. source/src/external/libbpf-bootstrap/libbpf/
     cp -rv ${bpftoolSrc}/. source/src/external/libbpf-bootstrap/bpftool/
     chmod -R u+w source/src/external/libbpf-bootstrap/bpftool/
@@ -189,7 +218,17 @@ stdenv.mkDerivation rec {
       source/src/external/libbpf-bootstrap/tools/cmake/FindBpfObject.cmake
     sed -i 's|\''${CLANG_SYSTEM_INCLUDES} -I\''${GENERATED_VMLINUX_DIR}|-I''${GENERATED_VMLINUX_DIR}|' \
       source/src/external/libbpf-bootstrap/tools/cmake/FindBpfObject.cmake
-    sed -i 's|cd $(EXTERNAL_LIBBPF) && mkdir -p build && cd build && cmake -DBPFOBJECT_CLANG_EXE=${clang.cc}/bin/clang .. && ''${MAKE}|cd $(EXTERNAL_LIBBPF) \&\& mkdir -p build \&\& cd build \&\& cmake -DBPFOBJECT_CLANG_EXE=${clang.cc}/bin/clang .. \&\& ''${MAKE} VERBOSE=1|' source/src/Makefile
+    # Pin the BPF compile to unwrapped clang: FindBpfObject only calls
+    # find_program when BPFOBJECT_CLANG_EXE is unset, and that picks the clang
+    # wrapper off $PATH, which injects host target/sysroot/hardening flags into
+    # a "-target bpf" compile. (The sed this replaces searched for a
+    # -DBPFOBJECT_CLANG_EXE= that only its own replacement would have inserted,
+    # so it never matched; VERBOSE=1 already reaches this sub-make through
+    # MAKEFLAGS from the top-level make.)
+    substituteInPlace source/src/Makefile \
+      --replace-fail \
+      'cd $(EXTERNAL_LIBBPF) && mkdir -p build && cd build && cmake .. && ''${MAKE}' \
+      'cd $(EXTERNAL_LIBBPF) && mkdir -p build && cd build && cmake -DBPFOBJECT_CLANG_EXE=${clang.cc}/bin/clang .. && ''${MAKE}'
     find source/src/shared_modules source/src/data_provider -name "CMakeLists.txt" \
       -exec sed -i \
         -e 's|-std=c++14|-std=c++17|g' \
@@ -282,6 +321,23 @@ stdenv.mkDerivation rec {
     find src/wazuh_modules -name "*.so*" -exec cp -P {} $INST/lib/ \; || true
     find src/data_provider -name "*.so*" -exec cp -P {} $INST/lib/ \; || true
 
+    # eBPF whodata needs two artifacts that upstream's installer places in lib/
+    # (src/init/inst-functions.sh): modern.bpf.o, which wazuh-syscheckd opens by
+    # path at runtime, and libbpf.so, which libfimebpf.so dlopens by soname.
+    # Both are built but neither is picked up by the finds above, so install
+    # them explicitly — and fail loudly rather than silently shipping an agent
+    # whose whodata cannot start.
+    test -e src/external/libbpf-bootstrap/build/modern.bpf.o \
+      || { echo "ERROR: modern.bpf.o was not built; eBPF whodata would fail at runtime"; exit 1; }
+    install -m 0750 src/external/libbpf-bootstrap/build/modern.bpf.o $INST/lib/modern.bpf.o
+    # Our ExternalProject passes OBJDIR=build/libbpf/libbpf, so libbpf.so lands
+    # one directory deeper than the build/libbpf/libbpf.so that upstream's
+    # installer looks for. install(1) dereferences the .so -> .so.1 -> .so.M.m
+    # symlink chain, matching what upstream ships: a single regular file.
+    test -e src/external/libbpf-bootstrap/build/libbpf/libbpf/libbpf.so \
+      || { echo "ERROR: libbpf.so not found under build/libbpf/libbpf - OBJDIR layout changed"; exit 1; }
+    install -m 0750 src/external/libbpf-bootstrap/build/libbpf/libbpf/libbpf.so $INST/lib/libbpf.so
+
     # Replace the rpath wholesale: the build-tree entries it contains are
     # dangling (and rejected by the /build/ reference check), but keep the
     # buildInputs store paths resolvable alongside the bundled libs.
@@ -291,6 +347,7 @@ stdenv.mkDerivation rec {
         zlib
         attr
         stdenv.cc.cc.lib
+        elfutils
       ]
     }"
     for f in $INST/lib/*.so $INST/lib/*.so.*; do

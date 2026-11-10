@@ -74,17 +74,12 @@ for name in "${dep_names[@]}"; do
   deps_obj=$(jq --arg n "$name" --arg h "$hash" '. + {($n): $h}' <<< "$deps_obj")
 done
 
-# nlohmann lives in a separate deps release, capped at 21 by upstream.
-echo "prefetching nlohmann (deps release 21)..."
-nlohmann_hash=$(prefetch_file "https://packages.wazuh.com/deps/21/libraries/sources/nlohmann.tar.gz")
-
 jq -n \
   --arg version "$version" \
   --arg depsVer "$deps_ver" \
   --arg srcHash "$src_hash" \
-  --arg nlohmann "$nlohmann_hash" \
   --argjson deps "$deps_obj" \
-  '{version: $version, depsVer: $depsVer, srcHash: $srcHash, nlohmann: $nlohmann, deps: $deps}' \
+  '{version: $version, depsVer: $depsVer, srcHash: $srcHash, deps: $deps}' \
   > "${deps_json}.new"
 mv "${deps_json}.new" "$deps_json"
 

@@ -410,6 +410,9 @@ in
         "d /var/lib/wazuh-agent/agentless               0750 wazuh wazuh -"
         "d /var/lib/wazuh-agent/active-response         0750 wazuh wazuh -"
         "d /var/lib/wazuh-agent/active-response/bin     0750 wazuh wazuh -"
+        # Holds the modern.bpf.o symlink; wazuh-syscheckd resolves the BPF
+        # object relative to its cwd, which is this directory's parent.
+        "d /var/lib/wazuh-agent/lib                     0750 wazuh wazuh -"
         "d /var/lib/wazuh-agent/queue                   0750 wazuh wazuh -"
         "d /var/lib/wazuh-agent/queue/alerts            0770 wazuh wazuh -"
         "d /var/lib/wazuh-agent/queue/diff              0750 wazuh wazuh -"
@@ -503,6 +506,16 @@ in
               for bin in ${pkg}/opt/wazuh-agent/bin/*; do
                 ln -sf "$bin" /var/lib/wazuh-agent/bin/$(basename "$bin")
               done
+
+              # ── lib/modern.bpf.o symlink ───────────────────────────────────
+              # wazuh-syscheckd chdir()s to $WAZUH_HOME and then resolves the
+              # BPF object as the relative path "lib/modern.bpf.o" (abspath()
+              # expands against cwd, so the store rpath does not help here).
+              # libbpf.so needs no symlink: libfimebpf.so dlopens it by soname
+              # and finds it through its own rpath into the store.
+              mkdir -p /var/lib/wazuh-agent/lib
+              ln -sf ${pkg}/opt/wazuh-agent/lib/modern.bpf.o \
+                /var/lib/wazuh-agent/lib/modern.bpf.o
 
               # ── Clean up stale runtime state ───────────────────────────────
               rm -f /var/lib/wazuh-agent/var/run/wazuh-*.pid
